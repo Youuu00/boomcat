@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>炸弹猫咪</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <span>💣</span><span>🐾</span><span>🃏</span><span>✨</span><span>🔥</span><span>💥</span>
+  </div>
+  <main>
+    <section id="welcome" class="panel welcome">
+      <div class="logo"><span>💣</span>BOOM!</div><h1>炸弹猫咪 🐱</h1><p>🎴 2–6 人实时策略互坑卡牌游戏</p>
+      <input id="name" maxlength="12" placeholder="你的昵称">
+      <button id="create">✨ 创建房间</button>
+      <div class="join"><input id="code" maxlength="6" inputmode="numeric" placeholder="6 位房间码"><button id="join">🚪 加入</button></div>
+    </section>
+    <section id="game" class="hidden">
+      <header><div><b>💣 炸弹猫咪</b><span id="roomCode"></span></div><div class="header-actions"><div id="deck">🃏 牌堆 0</div><button id="rulesButton" class="icon-button" aria-label="游戏规则">📖</button><button id="leaveButton" class="icon-button leave-button" aria-label="退出房间">🚪</button></div></header>
+      <div id="notice"></div>
+      <section id="players" class="players"></section>
+      <section class="table">
+        <div id="turn"></div><div id="actions"></div>
+      </section>
+      <h2>🖐️ 我的手牌</h2><section id="hand" class="hand"></section>
+      <section><h2>📜 对局记录</h2><div id="log" class="log"></div></section>
+    </section>
+  </main>
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <button id="modalClose" class="modal-close" aria-label="关闭">×</button>
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody"></div>
+      <div id="modalActions" class="modal-actions"></div>
+    </div>
+  </div>
+  <div id="toast"></div><script src="app.js"></script>
+</body>
+</html>
