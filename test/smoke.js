@@ -1,6 +1,6 @@
 const { spawn } = require('child_process');
 const assert = require('assert');
-const { advance, leaveRoom, resetForRematch } = require('../server');
+const { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat } = require('../server');
 
 const port = 3187;
 const base = `http://127.0.0.1:${port}`;
@@ -22,6 +22,80 @@ async function post(path, data, token) {
 }
 
 async function run() {
+  const makeRuleRoom = () => ({
+    players: [
+      { token: 'a', name: '甲', alive: true, ready: true, hand: [] },
+      { token: 'b', name: '乙', alive: true, ready: true, hand: [] },
+      { token: 'c', name: '丙', alive: true, ready: true, hand: [] }
+    ],
+    turn: 0, direction: 1, extraTurns: 0, status: 'playing', phase: 'play',
+    pending: null, deck: [], discard: [], log: [], chat: [], effect: null
+  });
+
+  const cutRoom = makeRuleRoom();
+  cutRoom.players[0].hand = ['cut'];
+  cutRoom.deck = ['一', '二', '三', '四'];
+  playCard(cutRoom, cutRoom.players[0], 'cut', null, { count: 2 });
+  assert.deepEqual(cutRoom.deck, ['三', '四', '一', '二']);
+
+  const stackedRoom = makeRuleRoom();
+  stackedRoom.players[0].hand = ['attack'];
+  stackedRoom.players[1].hand = ['attack'];
+  playCard(stackedRoom, stackedRoom.players[0], 'attack', 'b');
+  stackAttack(stackedRoom, stackedRoom.players[1], 'c');
+  resolvePending(stackedRoom, stackedRoom.players[2], 'accept');
+  assert.equal(stackedRoom.turn, 2);
+  assert.equal(stackedRoom.extraTurns, 2);
+
+  const blockedStackRoom = makeRuleRoom();
+  blockedStackRoom.players[0].hand = ['attack'];
+  blockedStackRoom.players[1].hand = ['attack'];
+  blockedStackRoom.players[2].hand = ['nope'];
+  playCard(blockedStackRoom, blockedStackRoom.players[0], 'attack', 'b');
+  stackAttack(blockedStackRoom, blockedStackRoom.players[1], 'c');
+  resolvePending(blockedStackRoom, blockedStackRoom.players[2], 'nope');
+  assert.equal(blockedStackRoom.pending.target, 'b');
+  assert.equal(blockedStackRoom.pending.chain.length, 1);
+  resolvePending(blockedStackRoom, blockedStackRoom.players[1], 'accept');
+  assert.equal(blockedStackRoom.turn, 1);
+  assert.equal(blockedStackRoom.extraTurns, 1);
+
+  const bombPositionRoom = makeRuleRoom();
+  bombPositionRoom.players[0].pendingBomb = true;
+  bombPositionRoom.phase = 'defuse';
+  bombPositionRoom.deck = ['一', '二'];
+  insertBomb(bombPositionRoom, bombPositionRoom.players[0], 1);
+  assert.deepEqual(bombPositionRoom.deck, ['bomb', '一', '二']);
+
+  const cancelAttackRoom = makeRuleRoom();
+  cancelAttackRoom.players[0].pendingBomb = true;
+  cancelAttackRoom.players[0].cancelAttackTurns = true;
+  cancelAttackRoom.phase = 'defuse';
+  cancelAttackRoom.extraTurns = 2;
+  cancelAttackRoom.deck = ['一', '二'];
+  insertBomb(cancelAttackRoom, cancelAttackRoom.players[0], 3);
+  assert.equal(cancelAttackRoom.turn, 1);
+  assert.equal(cancelAttackRoom.extraTurns, 0);
+  assert.deepEqual(cancelAttackRoom.deck, ['一', '二', 'bomb']);
+
+  const laterBombRoom = makeRuleRoom();
+  laterBombRoom.players[0].pendingBomb = true;
+  laterBombRoom.players[0].cancelAttackTurns = true;
+  laterBombRoom.phase = 'defuse';
+  laterBombRoom.extraTurns = 1;
+  laterBombRoom.attackTurnOwner = 'a';
+  laterBombRoom.attackTurnInitialExtra = 2;
+  laterBombRoom.deck = ['一'];
+  insertBomb(laterBombRoom, laterBombRoom.players[0], 2);
+  assert.equal(laterBombRoom.turn, 1);
+  assert.equal(laterBombRoom.extraTurns, 0);
+
+  const deadSpeakerRoom = makeRuleRoom();
+  deadSpeakerRoom.players[1].alive = false;
+  sendChat(deadSpeakerRoom, deadSpeakerRoom.players[1], '我虽然出局了，但还能聊天');
+  assert.equal(deadSpeakerRoom.chat[0].alive, false);
+  assert.equal(deadSpeakerRoom.chat[0].text, '我虽然出局了，但还能聊天');
+
   const attackedRoom = {
     players: [
       { name: '甲', alive: true },
