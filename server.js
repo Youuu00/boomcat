@@ -34,8 +34,17 @@ function log(room, message) {
   room.log.unshift(message);
   room.log = room.log.slice(0, 30);
 }
-function effect(room, type, title, subtitle = '') {
-  room.effect = { id: id(6), type, title, subtitle, issuedAt: Date.now() };
+function effect(room, type, title, subtitle = '', details = {}) {
+  room.effect = { id: id(6), type, title, subtitle, issuedAt: Date.now(), ...details };
+}
+function cardEffect(room, card, source, target = null, subtitle = '') {
+  effect(room, 'card', CARD_NAMES[card], subtitle, {
+    card,
+    source: source.token,
+    sourceName: source.name,
+    target: target?.token || null,
+    targetName: target?.name || null
+  });
 }
 function nextAlive(room, from, step = room.direction) {
   let i = from;
@@ -201,6 +210,7 @@ function playCard(room, p, type, targetToken, options = {}) {
   consume(p, type);
   room.discard.push(type);
   log(room, `${p.name} 使用了【${CARD_NAMES[type]}】${target ? `，目标是 ${target.name}` : ''}`);
+  cardEffect(room, type, p, target, type === 'cut' ? `牌堆底部 ${cutCount} 张移到顶部` : '');
 
   if (type === 'see') p.peek = room.deck.slice(0, 3);
   if (type === 'cut') {
@@ -227,7 +237,10 @@ function stackAttack(room, actor, targetToken) {
   pending.source = actor.token;
   pending.target = target.token;
   log(room, `${actor.name} 叠加【攻击】给 ${target.name}，累计 ${pending.chain.length + 1} 个回合`);
-  effect(room, 'attack-stack', '攻击叠加！', `${target.name} 面临 ${pending.chain.length + 1} 个连续回合`);
+  effect(room, 'attack-stack', '攻击叠加！', `${target.name} 面临 ${pending.chain.length + 1} 个连续回合`, {
+    card: 'attack', source: actor.token, sourceName: actor.name,
+    target: target.token, targetName: target.name
+  });
 }
 function resolvePending(room, actor, action, cardIndex) {
   const pending = room.pending;
@@ -236,6 +249,7 @@ function resolvePending(room, actor, action, cardIndex) {
   if (action === 'nope') {
     consume(actor, 'nope');
     room.discard.push('nope');
+    cardEffect(room, 'nope', actor, source, '当前一张牌被阻止');
     if (pending.type === 'attack' && pending.chain?.length > 1) {
       const blocked = pending.chain.pop();
       const previous = pending.chain[pending.chain.length - 1];
@@ -277,7 +291,6 @@ function draw(room, p) {
     return;
   }
   log(room, `${p.name} 摸到了炸弹！`);
-  effect(room, 'bomb', 'BOOM！摸到炸弹！', `${p.name} 的命运正在判定`);
   if (p.hand.includes('defuse')) {
     consume(p, 'defuse');
     room.discard.push('defuse');
@@ -285,7 +298,13 @@ function draw(room, p) {
     p.pendingBomb = true;
     p.cancelAttackTurns = room.attackTurnOwner === p.token;
     log(room, `${p.name} 使用了【拆除】，正在放回炸弹`);
+    effect(room, 'bomb-defuse', 'BOOM → 拆除！', `${p.name} 成功化解炸弹`, {
+      card: 'defuse', source: p.token, sourceName: p.name
+    });
   } else {
+    effect(room, 'bomb', 'BOOM！摸到炸弹！', `${p.name} 没有拆除牌`, {
+      card: 'bomb', source: p.token, sourceName: p.name
+    });
     p.alive = false;
     room.discard.push('bomb');
     log(room, `${p.name} 被炸出局`);
@@ -317,12 +336,16 @@ function sendChat(room, p, message) {
 }
 function publicState(room, token) {
   const me = player(room, token);
+  const roomEffect = room.effect ? {
+    ...room.effect,
+    role: room.effect.source === token ? 'source' : room.effect.target === token ? 'target' : 'observer'
+  } : null;
   return {
     code: room.code, status: room.status, host: room.host === token,
     direction: room.direction, turnToken: room.status === 'playing' ? current(room)?.token : null,
     turnName: room.status === 'playing' ? current(room)?.name : null,
     deckCount: room.deck.length, phase: room.phase, winner: room.winner, log: room.log,
-    effect: room.effect || null, chat: room.chat || [],
+    effect: roomEffect, chat: room.chat || [],
     pending: room.pending ? { type: room.pending.type, targetMe: room.pending.target === token, sourceName: player(room, room.pending.source)?.name, attackDepth: room.pending.chain?.length || 0 } : null,
     players: room.players.map(p => ({ token: p.token, name: p.name, ready: p.ready, alive: p.alive, cards: p.hand.length, host: p.token === room.host })),
     me: me ? { token, hand: me.hand, alive: me.alive, peek: me.peek || null, pendingBomb: !!me.pendingBomb } : null
@@ -432,4 +455,4 @@ if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => console.log(`Boom Cat running at http://0.0.0.0:${PORT}`));
 }
 
-module.exports = { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat };
+module.exports = { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat, publicState };

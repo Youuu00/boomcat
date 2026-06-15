@@ -137,8 +137,16 @@ function renderChat(){
 }
 function renderEffect(){
   const fx=state.effect;if(!fx||fx.id===lastEffectId||Date.now()-fx.issuedAt>8000)return;lastEffectId=fx.id;
-  const overlay=$('#effectOverlay');overlay.className=`effect-overlay ${fx.type}`;$('#effectIcon').textContent=fx.type==='bomb'?'💥':'⚔️';$('#effectTitle').textContent=fx.title;$('#effectSubtitle').textContent=fx.subtitle;
-  clearTimeout(renderEffect.timer);renderEffect.timer=setTimeout(()=>overlay.classList.add('hidden'),2200);
+  const icons={bomb:'💥',defuse:'🛠️',cut:'✂️',help:'🤝',see:'🔮',skip:'⏭️',reverse:'🔄',attack:'⚔️',swap:'🔁',nope:'🚫'};
+  const overlay=$('#effectOverlay');const involved=fx.role==='source'||fx.role==='target';
+  overlay.className=`effect-overlay ${fx.type} card-${fx.card||'none'} role-${fx.role} ${involved?'involved':'observer'}`;
+  $('#effectIcon').textContent=fx.type==='bomb-defuse'?'💣🛠️':fx.type==='bomb'?'💥':icons[fx.card]||'✨';
+  const actors=$('#effectActors');
+  if(fx.targetName)actors.textContent=`${fx.sourceName}  ${fx.card==='swap'?'VS':'→'}  ${fx.targetName}`;
+  else actors.textContent=fx.sourceName||'';
+  $('#effectTitle').textContent=involved?fx.title:(fx.targetName?`${fx.sourceName} ${fx.card==='swap'?'VS':'→'} ${fx.targetName}`:`${fx.sourceName} 使用了 ${fx.title}`);
+  $('#effectSubtitle').textContent=fx.subtitle||(fx.targetName?`使用【${names[fx.card]||fx.title}】`:'');
+  clearTimeout(renderEffect.timer);renderEffect.timer=setTimeout(()=>overlay.classList.add('hidden'),fx.type==='bomb'?2200:1700);
 }
 $('#chatForm').onsubmit=e=>{e.preventDefault();const input=$('#chatInput');const message=input.value.trim();if(!message)return;post('/api/chat',{message});input.value=''};
 function addButton(parent,label,fn){const b=document.createElement('button');b.textContent=label;b.onclick=fn;parent.append(b)}

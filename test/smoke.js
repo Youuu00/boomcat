@@ -1,6 +1,6 @@
 const { spawn } = require('child_process');
 const assert = require('assert');
-const { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat } = require('../server');
+const { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat, publicState } = require('../server');
 
 const port = 3187;
 const base = `http://127.0.0.1:${port}`;
@@ -42,6 +42,10 @@ async function run() {
   stackedRoom.players[0].hand = ['attack'];
   stackedRoom.players[1].hand = ['attack'];
   playCard(stackedRoom, stackedRoom.players[0], 'attack', 'b');
+  assert.equal(publicState(stackedRoom, 'a').effect.role, 'source');
+  assert.equal(publicState(stackedRoom, 'b').effect.role, 'target');
+  assert.equal(publicState(stackedRoom, 'c').effect.role, 'observer');
+  assert.equal(stackedRoom.effect.card, 'attack');
   stackAttack(stackedRoom, stackedRoom.players[1], 'c');
   resolvePending(stackedRoom, stackedRoom.players[2], 'accept');
   assert.equal(stackedRoom.turn, 2);
