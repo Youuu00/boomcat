@@ -1,7 +1,7 @@
 const $ = s => document.querySelector(s);
 const names = {bomb:'💣 炸弹',defuse:'🛠️ 拆除',cut:'✂️ 切牌',help:'🤝 帮助',see:'🔮 查看',skip:'⏭️ 跳过',reverse:'🔄 转向',attack:'⚔️ 攻击',swap:'🔁 交换',nope:'🚫 禁止'};
 const desc = {bomb:'没有拆除就会出局',defuse:'拆除炸弹并放回牌堆',cut:'将牌堆底部指定张数切到顶部',help:'让对方给你一张牌',see:'查看牌堆顶三张',skip:'结束自己的回合',reverse:'结束回合并反转方向',attack:'目标连续两回合，可叠加增加回合',swap:'交换双方全部手牌',nope:'只使当前一张目标牌失效'};
-let token = localStorage.boomcatToken || ''; let state = null; let events; let shownPending = ''; let lastEffectId = '';
+let token = localStorage.boomcatToken || ''; let state = null; let events; let shownPending = ''; let lastEffectId = ''; const pendingRequests = new Set();
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 async function request(path,data,auth=true){
   const r=await fetch(path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(auth&&token?{Authorization:`Bearer ${token}`}:{})},body:data===undefined?undefined:JSON.stringify(data)});
@@ -18,7 +18,25 @@ function connect(){
   events?.close();events=new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
   events.onmessage=e=>{state=JSON.parse(e.data);render()};events.onerror=()=>toast('连接中断，正在重连');
 }
-const post=async(path,data={})=>{try{await request(path,data)}catch(e){toast(e.message)}};
+const post=async(path,data={})=>{
+  if(pendingRequests.has(path))return;
+  pendingRequests.add(path);
+  if(state)renderActions();
+  try{
+    await request(path,data);
+    const latest=await request('/api/state');
+    state=latest;render();
+  }catch(e){
+    // A delayed duplicate bomb request means the first request already worked.
+    if(path==='/api/bomb'&&e.message==='当前无需放置炸弹'){
+      try{state=await request('/api/state');render();return}catch{}
+    }
+    toast(e.message);
+  }finally{
+    pendingRequests.delete(path);
+    if(state)renderActions();
+  }
+};
 function openModal(title,body,actions=[],options={}){
   $('#modalTitle').textContent=title;$('#modalTitle').className=options.danger?'danger-title':'';
   $('#modalBody').innerHTML=body;const area=$('#modalActions');area.innerHTML='';
@@ -96,7 +114,8 @@ function renderActions(){
   }
   if(state.me.pendingBomb){
     const max=state.deckCount+1;const label=document.createElement('span');label.textContent=`放在第 1～${max} 张：`;a.append(label);
-    const input=document.createElement('input');input.type='number';input.min=1;input.max=max;input.value=1;a.append(input);addButton(a,'💣 放回炸弹',()=>post('/api/bomb',{position:Number(input.value)}));return;
+    const input=document.createElement('input');input.type='number';input.min=1;input.max=max;input.value=1;input.disabled=pendingRequests.has('/api/bomb');a.append(input);
+    const button=addButton(a,pendingRequests.has('/api/bomb')?'⏳ 正在放回…':'💣 放回炸弹',()=>post('/api/bomb',{position:Number(input.value)}));button.disabled=pendingRequests.has('/api/bomb');return;
   }
   if(state.turnToken===state.me.token&&!state.pending)addButton(a,'🃏 摸一张牌',()=>post('/api/draw'));
 }
@@ -149,6 +168,6 @@ function renderEffect(){
   clearTimeout(renderEffect.timer);renderEffect.timer=setTimeout(()=>overlay.classList.add('hidden'),fx.type==='bomb'?2200:1700);
 }
 $('#chatForm').onsubmit=e=>{e.preventDefault();const input=$('#chatInput');const message=input.value.trim();if(!message)return;post('/api/chat',{message});input.value=''};
-function addButton(parent,label,fn){const b=document.createElement('button');b.textContent=label;b.onclick=fn;parent.append(b)}
+function addButton(parent,label,fn){const b=document.createElement('button');b.textContent=label;b.onclick=fn;parent.append(b);return b}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 if(token){request('/api/state').then(()=>{$('#welcome').classList.add('hidden');$('#game').classList.remove('hidden');connect()}).catch(()=>{token='';localStorage.removeItem('boomcatToken')})}
