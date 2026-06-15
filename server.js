@@ -319,7 +319,7 @@ function insertBomb(room, p, position) {
   const at = chosen - 1;
   room.deck.splice(at, 0, 'bomb');
   p.pendingBomb = false;
-  log(room, `${p.name} 已将炸弹放到牌堆第 ${chosen} 张`);
+  log(room, `${p.name} 已将炸弹秘密放回牌堆`);
   if (p.cancelAttackTurns) {
     room.extraTurns = 0;
     p.cancelAttackTurns = false;
