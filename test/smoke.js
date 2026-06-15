@@ -70,6 +70,8 @@ async function run() {
   bombPositionRoom.deck = ['一', '二'];
   insertBomb(bombPositionRoom, bombPositionRoom.players[0], 1);
   assert.deepEqual(bombPositionRoom.deck, ['bomb', '一', '二']);
+  assert.equal(bombPositionRoom.log.some(message => message.includes('第 1 张')), false);
+  assert.equal(bombPositionRoom.log[0], '甲 已将炸弹秘密放回牌堆');
 
   const cancelAttackRoom = makeRuleRoom();
   cancelAttackRoom.players[0].pendingBomb = true;
