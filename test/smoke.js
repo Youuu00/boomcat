@@ -1,6 +1,6 @@
 const { spawn } = require('child_process');
 const assert = require('assert');
-const { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat, publicState } = require('../server');
+const { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat, publicState, draw, buildDeck } = require('../server');
 
 const port = 3187;
 const base = `http://127.0.0.1:${port}`;
@@ -32,6 +32,29 @@ async function run() {
     pending: null, deck: [], discard: [], log: [], chat: [], effect: null
   });
 
+  const typeOf = card => typeof card === 'string' ? card : card.type;
+  const normalDeck = buildDeck(3, 'normal').map(typeOf);
+  assert.equal(normalDeck.filter(type => type === 'bomb').length, 2);
+  assert.equal(normalDeck.some(type => type === 'invisibleBomb' || type === 'delayBomb'), false);
+  assert.equal(normalDeck.some(type => type.startsWith('adv_')), false);
+  for (let players = 2; players <= 6; players++) {
+    for (let i = 0; i < 30; i++) {
+      const deck = buildDeck(players, 'advanced').map(typeOf);
+      const bombs = deck.filter(type => ['bomb', 'invisibleBomb', 'delayBomb'].includes(type));
+      assert.equal(bombs.length, players - 1);
+      assert.equal(bombs.filter(type => type === 'bomb').length >= 1, true);
+      assert.equal(bombs.filter(type => type === 'invisibleBomb').length <= 1, true);
+      assert.equal(bombs.filter(type => type === 'delayBomb').length <= 1, true);
+      assert.equal(deck.filter(type => type.startsWith('adv_')).length, 5);
+    }
+  }
+
+  const lockedDefuseRoom = makeRuleRoom();
+  lockedDefuseRoom.players[0].hand = ['skip'];
+  lockedDefuseRoom.players[0].pendingBomb = true;
+  lockedDefuseRoom.phase = 'defuse';
+  assert.throws(() => playCard(lockedDefuseRoom, lockedDefuseRoom.players[0], 'skip'), /请先把炸弹放回牌堆/);
+
   const cutRoom = makeRuleRoom();
   cutRoom.players[0].hand = ['cut'];
   cutRoom.deck = ['一', '二', '三', '四'];
@@ -47,6 +70,7 @@ async function run() {
   assert.equal(publicState(stackedRoom, 'c').effect.role, 'observer');
   assert.equal(stackedRoom.effect.card, 'attack');
   stackAttack(stackedRoom, stackedRoom.players[1], 'c');
+  assert.throws(() => stackAttack(stackedRoom, stackedRoom.players[2], 'a'), /攻击只能叠加一次/);
   resolvePending(stackedRoom, stackedRoom.players[2], 'accept');
   assert.equal(stackedRoom.turn, 2);
   assert.equal(stackedRoom.extraTurns, 2);
@@ -58,11 +82,30 @@ async function run() {
   playCard(blockedStackRoom, blockedStackRoom.players[0], 'attack', 'b');
   stackAttack(blockedStackRoom, blockedStackRoom.players[1], 'c');
   resolvePending(blockedStackRoom, blockedStackRoom.players[2], 'nope');
-  assert.equal(blockedStackRoom.pending.target, 'b');
-  assert.equal(blockedStackRoom.pending.chain.length, 1);
-  resolvePending(blockedStackRoom, blockedStackRoom.players[1], 'accept');
+  assert.equal(blockedStackRoom.pending, null);
   assert.equal(blockedStackRoom.turn, 1);
   assert.equal(blockedStackRoom.extraTurns, 1);
+
+  const advancedSwapRoom = makeRuleRoom();
+  advancedSwapRoom.players[0].hand = ['adv_swap', '一'];
+  advancedSwapRoom.players[1].hand = ['nope', '二'];
+  playCard(advancedSwapRoom, advancedSwapRoom.players[0], 'adv_swap', 'b');
+  resolvePending(advancedSwapRoom, advancedSwapRoom.players[1], 'nope');
+  assert.deepEqual(advancedSwapRoom.players[0].hand.map(String), ['二']);
+  assert.deepEqual(advancedSwapRoom.players[1].hand.map(String), ['一']);
+
+  const delayTransferRoom = makeRuleRoom();
+  const delayCard = { type: 'delayBomb', ticks: 1 };
+  delayTransferRoom.players[0].hand = ['help', 'defuse'];
+  delayTransferRoom.players[1].hand = [delayCard, 'defuse'];
+  playCard(delayTransferRoom, delayTransferRoom.players[0], 'help', 'b');
+  resolvePending(delayTransferRoom, delayTransferRoom.players[1], 'accept', 0);
+  assert.equal(delayTransferRoom.players[0].hand.some(c => c.type === 'delayBomb' && c.ticks === 1), true);
+  delayTransferRoom.turn = 0;
+  delayTransferRoom.deck = ['skip'];
+  draw(delayTransferRoom, delayTransferRoom.players[0]);
+  assert.equal(delayTransferRoom.phase, 'defuse');
+  assert.equal(delayTransferRoom.players[0].pendingBomb, true);
 
   const bombPositionRoom = makeRuleRoom();
   bombPositionRoom.players[0].pendingBomb = true;
@@ -186,7 +229,8 @@ async function run() {
   assert.equal(state.players.length, 2);
   assert.equal(state.me.hand.length, 5);
   assert.equal(state.me.hand.filter(card => card === 'defuse').length, 1);
-  assert.equal(state.deckCount, 33);
+  assert.equal(state.deckCount + state.players.reduce((sum, item) => sum + item.cards, 0), 22);
+  assert.equal(state.deckCount, 12);
   await post('/api/leave', {}, b.token);
   const finishedResponse = await fetch(base + '/api/state', { headers: { Authorization: `Bearer ${a.token}` } });
   const finishedState = await finishedResponse.json();

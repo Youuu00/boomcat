@@ -12,7 +12,7 @@ function returnHome(){
   events?.close();events=null;token='';state=null;shownPending='';localStorage.removeItem('boomcatToken');
   forceCloseModal();$('#game').classList.add('hidden');$('#welcome').classList.remove('hidden');
 }
-$('#create').onclick=async()=>{try{enter(await request('/api/create',{name:$('#name').value},false))}catch(e){toast(e.message)}};
+$('#create').onclick=async()=>{try{enter(await request('/api/create',{name:$('#name').value,mode:$('#gameMode')?.value||'advanced'},false))}catch(e){toast(e.message)}};
 $('#join').onclick=async()=>{try{enter(await request('/api/join',{name:$('#name').value,code:$('#code').value},false))}catch(e){toast(e.message)}};
 function connect(){
   events?.close();events=new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
@@ -49,18 +49,19 @@ $('#modal').onclick=e=>{if(e.target===$('#modal'))closeModal()};
 $('#chatBubbleButton').onclick=()=>$('#chatPanel').classList.toggle('collapsed');
 $('#logToggle').onclick=()=>$('.log-shell').classList.toggle('expanded');
 $('#rulesButton').onclick=()=>openModal('游戏规则',`<div class="rules">
-  <p>2–6 人参与。整局总牌数为 10 × 人数 + 2。每人获得 4 张功能牌和 1 张拆除，牌堆额外加入 2 张拆除。</p>
+  <p>2–6 人参与。创建房间时可以选择普通场或高级场。整局总牌数为 10 × 人数 + 2。每人获得 4 张功能牌和 1 张拆除，牌堆额外加入 2 张拆除。</p>
+  <p>炸弹总数固定为人数 - 1，且至少有 1 张普通炸弹。普通场只有普通炸弹；高级场可能把部分普通炸弹替换为隐身炸弹或延时炸弹，每类特殊炸弹最多 1 张。</p>
   <h3>回合流程</h3><p>出牌阶段可以使用任意数量的牌，也可以不出。随后必须摸一张牌并结束回合。默认按逆时针行动。</p>
   <p>受攻击玩家在连续回合中的任意一回合摸到炸弹并拆除，尚未进行的受攻击回合全部取消，直接轮到下一位。</p>
   <h3>胜利条件</h3><p>摸到炸弹时，没有拆除牌便立即出局；最后存活的玩家获胜。</p>
   <h3>卡牌说明</h3><ol>
-    <li><b>炸弹：</b>摸到且没有拆除便出局。</li><li><b>隐身炸弹：</b>查看牌堆时会固定伪装成一张非炸弹牌。</li>
-    <li><b>延时炸弹：</b>会进入手牌，之后第二次摸牌前引爆；交换或帮助转移时保留计时。</li><li><b>拆除：</b>拆掉炸弹，并把炸弹秘密放回牌堆任意位置。</li>
+    <li><b>炸弹：</b>摸到且没有拆除便出局。</li><li><b>隐身炸弹：</b>仅高级场可能出现；查看牌堆时会固定伪装成一张非炸弹牌。</li>
+    <li><b>延时炸弹：</b>仅高级场可能出现；会进入手牌，之后第二次摸牌前引爆；交换或帮助转移时保留计时。</li><li><b>拆除：</b>拆掉炸弹，并把炸弹秘密放回牌堆任意位置。</li>
     <li><b>切牌：</b>将牌堆底部指定张数切到顶部。</li><li><b>帮助：</b>指定玩家选择一张手牌交给你。</li>
     <li><b>查看：</b>查看牌堆顶三张牌。</li><li><b>跳过：</b>立即结束自己的回合。</li>
     <li><b>转向：</b>结束回合并反转行动方向。</li><li><b>攻击：</b>目标连续两个回合；目标可叠加一次攻击，若叠加被禁止，则原目标执行原攻击的两个回合。</li>
     <li><b>交换：</b>与指定玩家交换全部手牌。</li><li><b>禁止：</b>只阻止当前一张帮助、攻击或交换；不能一次阻止整条攻击链。</li>
-  </ol><h3>高级牌</h3><p>高级牌带炫彩边框，各 1 张。高级切牌不公开数量；高级查看能看下一张炸弹位置；高级帮助不能被禁止；高级交换只有被禁止才生效；高级禁止只能取消别人对你的禁止。</p><h3>公共聊天</h3><p>房间内所有玩家都能发言，已经出局的玩家也可以继续聊天。</p></div>`);
+  </ol><h3>高级牌</h3><p>高级牌仅高级场出现，带炫彩边框，各 1 张。高级切牌不公开数量；高级查看能看下一张炸弹位置；高级帮助不能被禁止；高级交换只有被禁止才生效；高级禁止只能取消别人对你的禁止。</p><h3>公共聊天</h3><p>房间内所有玩家都能发言，已经出局的玩家也可以继续聊天。</p></div>`);
 $('#leaveButton').onclick=()=>{
   const active=state?.status==='playing';
   openModal('退出房间',`<p>${active?'游戏正在进行，退出后将视为出局。':'确定要离开当前房间吗？'}</p>${state?.host&&state.players.length>1?'<p>房主将自动转交给下一位玩家。</p>':''}`,[
@@ -69,7 +70,7 @@ $('#leaveButton').onclick=()=>{
   ],{danger:active});
 };
 function render(){
-  $('#roomCode').textContent=`🔑 房间码 ${state.code}`;$('#deck').textContent=`🃏 ${state.deckCount}`;
+  $('#roomCode').textContent=`🔑 房间码 ${state.code} · ${state.mode==='normal'?'普通场':'高级场'}`;$('#deck').textContent=`🃏 ${state.deckCount}`;
   $('#directionBadge').textContent=state.direction===1?'↻':'↺';
   renderPlayers();
   $('#log').innerHTML=state.log.map(x=>`<div>${esc(x)}</div>`).join('');
@@ -155,11 +156,20 @@ function renderHand(){
   const hand=$('#hand');hand.innerHTML='';
   const groups=new Map();
   state.me.hand.forEach(type=>{if(!groups.has(type))groups.set(type,0);groups.set(type,groups.get(type)+1)});
-  [...groups.entries()].forEach(([type,count],index,arr)=>{
+  const entries=[...groups.entries()];
+  const compact=window.matchMedia('(max-width: 560px)').matches;
+  const cardWidth=compact?78:96;
+  const safeWidth=Math.max(220,(hand.clientWidth||window.innerWidth)-28);
+  const overflow=Math.max(0,entries.length*cardWidth-safeWidth);
+  const overlap=entries.length>1?Math.min(cardWidth-46,Math.ceil(overflow/(entries.length-1))):0;
+  entries.forEach(([type,count],index,arr)=>{
     const b=document.createElement('button');const offset=index-(arr.length-1)/2;
     b.className=`card ${type} ${type.startsWith('adv_')?'advanced':''}`;
-    b.style.setProperty('--fan', `${offset*5}deg`);
-    b.style.setProperty('--lift', `${Math.abs(offset)*-5}px`);
+    b.style.width=`${cardWidth}px`;
+    b.style.flexBasis=`${cardWidth}px`;
+    b.style.marginLeft=index?`${-overlap}px`:'0px';
+    b.style.setProperty('--fan', `${offset*Math.min(5,Math.max(2.4,30/Math.max(arr.length,1)))}deg`);
+    b.style.setProperty('--lift', `${Math.abs(offset)*-4}px`);
     b.innerHTML=`<strong>${names[type]||type}</strong><small>${desc[type]||''}</small>${count>1?`<span class="card-count">x${count}</span>`:''}`;
     b.onclick=()=>use(type);if(state.me.pendingBomb){b.disabled=true;b.title='请先放回炸弹'}hand.append(b)
   });

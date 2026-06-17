@@ -1,4 +1,4 @@
-const http = require('http');
+﻿const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -11,8 +11,13 @@ const streams = new Map();
 
 const CARD_NAMES = {
   bomb: '炸弹', defuse: '拆除', cut: '切牌', help: '帮助', see: '查看',
-  skip: '跳过', reverse: '转向', attack: '攻击', swap: '交换', nope: '禁止'
+  skip: '跳过', reverse: '转向', attack: '攻击', swap: '交换', nope: '禁止',
+  invisibleBomb: '隐身炸弹', delayBomb: '延时炸弹',
+  adv_cut: '高级切牌', adv_see: '高级查看', adv_help: '高级帮助',
+  adv_swap: '高级交换', adv_nope: '高级禁止'
 };
+const ADVANCED_CARDS = new Set(['adv_cut', 'adv_see', 'adv_help', 'adv_swap', 'adv_nope']);
+const BOMB_CARDS = new Set(['bomb', 'invisibleBomb']);
 
 function id(bytes = 12) { return crypto.randomBytes(bytes).toString('hex'); }
 function roomCode() {
@@ -26,6 +31,25 @@ function shuffle(list) {
     [list[i], list[j]] = [list[j], list[i]];
   }
   return list;
+}
+function card(type, extra = {}) { return { id: id(5), type, ...extra }; }
+function cardType(item) { return typeof item === 'string' ? item : item.type; }
+function visibleType(item) {
+  const type = cardType(item);
+  if (type === 'invisibleBomb') return item.mask || 'skip';
+  return type;
+}
+function handTypes(p) { return p.hand.map(cardType); }
+function hasCard(p, type) { return p.hand.some(c => cardType(c) === type); }
+function removeCardAt(p, index) { return p.hand.splice(index, 1)[0]; }
+function removeFirstCard(p, type) {
+  const i = p.hand.findIndex(c => cardType(c) === type);
+  if (i < 0) throw Error('你没有这张牌');
+  return p.hand.splice(i, 1)[0];
+}
+function randomMask() {
+  const masks = ['defuse', 'cut', 'help', 'see', 'skip', 'reverse', 'attack', 'swap', 'nope'];
+  return masks[Math.floor(Math.random() * masks.length)];
 }
 function living(room) { return room.players.filter(p => p.alive); }
 function player(room, token) { return room.players.find(p => p.token === token); }
@@ -144,32 +168,72 @@ function resetForRematch(room, token) {
     p.ready = p.token === room.host;
     p.peek = null;
     p.pendingBomb = false;
+    p.pendingBombCard = null;
     p.cancelAttackTurns = false;
   });
   log(room, '房主发起了下一局，请大家准备');
 }
-function buildDeck(count) {
-  const quantities = { cut: 5, help: 6, see: 5, skip: 5, reverse: 5, attack: 5, swap: 4, nope: 5 };
-  const deck = [];
-  for (const [type, amount] of Object.entries(quantities)) {
-    for (let i = 0; i < amount; i++) deck.push(type);
-  }
+function specialBombsFor(count, mode) {
+  if (mode !== 'advanced') return [];
+  const slots = Math.max(0, count - 2);
+  const candidates = shuffle(['invisibleBomb', 'delayBomb']);
+  const amount = Math.floor(Math.random() * (Math.min(slots, candidates.length) + 1));
+  return candidates.slice(0, amount);
+}
+function makeBombCard(type) {
+  if (type === 'invisibleBomb') return card('invisibleBomb', { mask: randomMask() });
+  if (type === 'delayBomb') return card('delayBomb', { ticks: 0 });
+  return 'bomb';
+}
+function isBombLike(item) {
+  const type = cardType(item);
+  return BOMB_CARDS.has(type) || type === 'delayBomb';
+}
+function buildDeck(count, mode = 'advanced') {
+  const totalCards = count * 10 + 2;
+  const initialCards = count * 5;
+  const deckSize = totalCards - count;
+  const specialBombs = specialBombsFor(count, mode);
+  const normalBombs = Math.max(1, count - 1 - specialBombs.length);
+  const advancedCards = mode === 'advanced'
+    ? ['adv_cut', 'adv_see', 'adv_help', 'adv_swap', 'adv_nope']
+    : [];
+  const deck = [
+    ...Array.from({ length: normalBombs }, () => 'bomb'),
+    ...specialBombs.map(makeBombCard),
+    'defuse', 'defuse',
+    ...advancedCards
+  ];
+  const pool = ['cut', 'help', 'see', 'skip', 'reverse', 'attack', 'swap', 'nope'];
+  let i = 0;
+  while (deck.length < deckSize) deck.push(pool[i++ % pool.length]);
   return shuffle(deck);
 }
 function startGame(room, token) {
   if (room.host !== token) throw Error('只有房主能开始');
   if (room.players.length < 2) throw Error('至少需要 2 名玩家');
   if (!room.players.every(p => p.ready || p.token === room.host)) throw Error('还有玩家未准备');
-  let deck = buildDeck(room.players.length);
+  let deck = buildDeck(room.players.length, room.mode);
+  const fixedDeckCards = [];
+  function reserve(type, amount) {
+    for (let i = 0; i < amount; i++) {
+      const index = deck.findIndex(item => cardType(item) === type);
+      if (index >= 0) fixedDeckCards.push(deck.splice(index, 1)[0]);
+    }
+  }
+  for (let i = deck.length - 1; i >= 0; i--) {
+    if (isBombLike(deck[i])) fixedDeckCards.push(deck.splice(i, 1)[0]);
+  }
+  reserve('defuse', 2);
   room.players.forEach(p => {
     p.hand = deck.splice(0, 4);
     p.hand.push('defuse');
     p.alive = true;
     p.pendingBomb = false;
+    p.pendingBombCard = null;
     p.cancelAttackTurns = false;
   });
-  for (let i = 0; i < room.players.length - 1; i++) deck.push('bomb');
-  room.deck = shuffle(deck);
+  room.deck = shuffle(deck.concat(fixedDeckCards));
   room.discard = [];
   room.direction = -1;
   room.turn = Math.floor(Math.random() * room.players.length);
@@ -184,24 +248,31 @@ function startGame(room, token) {
   log(room, `游戏开始，${current(room).name} 先行动`);
 }
 function consume(p, type) {
-  const i = p.hand.indexOf(type);
-  if (i < 0) throw Error('你没有这张牌');
-  p.hand.splice(i, 1);
+  removeFirstCard(p, type);
 }
 function requireTurn(room, p) {
   if (room.status !== 'playing') throw Error('游戏尚未开始');
   if (current(room) !== p) throw Error('还没轮到你');
   if (!p.alive) throw Error('你已出局');
+  if (room.phase === 'defuse' || p.pendingBomb) throw Error('请先把炸弹放回牌堆');
   if (room.pending) throw Error('请先处理当前操作');
+}
+function resolveAttack(room, actor, turns) {
+  room.turn = room.players.indexOf(actor);
+  room.extraTurns = turns - 1;
+  room.attackTurnOwner = actor.token;
+  room.attackTurnInitialExtra = room.extraTurns;
+  room.phase = 'play';
+  log(room, `${actor.name} 将连续进行 ${turns} 个回合`);
 }
 function playCard(room, p, type, targetToken, options = {}) {
   requireTurn(room, p);
-  if (['bomb', 'defuse', 'nope'].includes(type)) throw Error('这张牌不能主动使用');
+  if (['bomb', 'invisibleBomb', 'delayBomb', 'defuse', 'nope', 'adv_nope'].includes(type)) throw Error('这张牌不能主动使用');
   const target = player(room, targetToken);
-  if (['help', 'attack', 'swap'].includes(type) && (!target || !target.alive)) throw Error('请选择存活玩家');
-  if (['help', 'swap'].includes(type) && target === p) throw Error('不能对自己使用这张牌');
+  if (['help', 'attack', 'swap', 'adv_help', 'adv_swap'].includes(type) && (!target || !target.alive)) throw Error('请选择存活玩家');
+  if (['help', 'swap', 'adv_help', 'adv_swap'].includes(type) && target === p) throw Error('不能对自己使用这张牌');
   let cutCount = 0;
-  if (type === 'cut') {
+  if (type === 'cut' || type === 'adv_cut') {
     cutCount = Number(options.count);
     if (!Number.isInteger(cutCount) || cutCount < 1 || cutCount > room.deck.length) {
       throw Error(`切牌数量必须在 1～${room.deck.length} 之间`);
@@ -212,23 +283,32 @@ function playCard(room, p, type, targetToken, options = {}) {
   log(room, `${p.name} 使用了【${CARD_NAMES[type]}】${target ? `，目标是 ${target.name}` : ''}`);
   cardEffect(room, type, p, target, type === 'cut' ? `牌堆底部 ${cutCount} 张移到顶部` : '');
 
-  if (type === 'see') p.peek = room.deck.slice(0, 3);
-  if (type === 'cut') {
+  if (type === 'see') p.peek = room.deck.slice(0, 3).map(visibleType);
+  if (type === 'adv_see') {
+    const index = room.deck.findIndex(c => BOMB_CARDS.has(cardType(c)) || cardType(c) === 'delayBomb');
+    p.peek = [index < 0 ? '下一张炸弹：无' : `下一张炸弹在第 ${index + 1} 张`];
+  }
+  if (type === 'cut' || type === 'adv_cut') {
     room.deck = room.deck.slice(-cutCount).concat(room.deck.slice(0, -cutCount));
-    log(room, `${p.name} 将牌堆底部 ${cutCount} 张牌切到了顶部`);
+    log(room, type === 'adv_cut'
+      ? `${p.name} 秘密切了一次牌`
+      : `${p.name} 将牌堆底部 ${cutCount} 张牌切到了顶部`);
   }
   if (type === 'skip') advance(room);
   if (type === 'reverse') { room.direction *= -1; advance(room); }
   if (type === 'help') room.pending = { type: 'help', source: p.token, target: target.token };
+  if (type === 'adv_help') room.pending = { type: 'adv_help', source: p.token, target: target.token, noNope: true };
   if (type === 'swap') room.pending = { type: 'swap', source: p.token, target: target.token };
+  if (type === 'adv_swap') room.pending = { type: 'adv_swap', source: p.token, target: target.token };
   if (type === 'attack') room.pending = {
     type: 'attack', source: p.token, target: target.token,
-    chain: [{ source: p.token, target: target.token }]
+    chain: [{ source: p.token, target: target.token }], stacked: false
   };
 }
 function stackAttack(room, actor, targetToken) {
   const pending = room.pending;
   if (!pending || pending.type !== 'attack' || pending.target !== actor.token) throw Error('当前没有可叠加的攻击');
+  if (pending.stacked || pending.chain?.length > 1) throw Error('攻击只能叠加一次');
   const target = player(room, targetToken);
   if (!target || !target.alive) throw Error('请选择存活玩家');
   consume(actor, 'attack');
@@ -236,8 +316,9 @@ function stackAttack(room, actor, targetToken) {
   pending.chain.push({ source: actor.token, target: target.token });
   pending.source = actor.token;
   pending.target = target.token;
-  log(room, `${actor.name} 叠加【攻击】给 ${target.name}，累计 ${pending.chain.length + 1} 个回合`);
-  effect(room, 'attack-stack', '攻击叠加！', `${target.name} 面临 ${pending.chain.length + 1} 个连续回合`, {
+  pending.stacked = true;
+  log(room, `${actor.name} 叠加【攻击】给 ${target.name}，目标将进行 3 个回合`);
+  effect(room, 'attack-stack', '攻击叠加！', `${target.name} 面临 3 个连续回合`, {
     card: 'attack', source: actor.token, sourceName: actor.name,
     target: target.token, targetName: target.name
   });
@@ -246,70 +327,107 @@ function resolvePending(room, actor, action, cardIndex) {
   const pending = room.pending;
   if (!pending || pending.target !== actor.token) throw Error('没有需要你处理的操作');
   const source = player(room, pending.source);
+  if (action === 'adv_nope') {
+    if (pending.type !== 'adv_nope' || pending.target !== actor.token) throw Error('当前不能使用高级禁止');
+    consume(actor, 'adv_nope');
+    room.discard.push('adv_nope');
+    cardEffect(room, 'adv_nope', actor, player(room, pending.source), '取消了对方的禁止');
+    room.pending = pending.original;
+    room.pending.noNope = true;
+    log(room, `${actor.name} 使用【高级禁止】，取消了禁止`);
+    return;
+  }
   if (action === 'nope') {
+    if (pending.noNope) throw Error('这张牌不能被禁止');
     consume(actor, 'nope');
     room.discard.push('nope');
     cardEffect(room, 'nope', actor, source, '当前一张牌被阻止');
-    if (pending.type === 'attack' && pending.chain?.length > 1) {
-      const blocked = pending.chain.pop();
-      const previous = pending.chain[pending.chain.length - 1];
-      pending.source = previous.source;
-      pending.target = previous.target;
-      log(room, `${actor.name} 使用【禁止】，只阻止了 ${player(room, blocked.source)?.name || '上一位玩家'} 叠加的攻击`);
+    if (pending.type === 'adv_swap') {
+      [actor.hand, source.hand] = [source.hand, actor.hand];
+      log(room, `${actor.name} 禁止了【高级交换】，交换反而生效`);
+      room.pending = null;
+    } else if (pending.type === 'attack' && pending.chain?.length > 1) {
+      const originalTarget = player(room, pending.chain[0].target);
+      log(room, `${actor.name} 使用【禁止】，阻止了叠加攻击，${originalTarget.name} 执行原攻击的 2 个回合`);
+      resolveAttack(room, originalTarget, 2);
+      room.pending = null;
+    } else if (source && hasCard(source, 'adv_nope')) {
+      room.pending = { type: 'adv_nope', source: actor.token, target: source.token, original: { ...pending, noNope: true } };
     } else {
       log(room, `${actor.name} 使用【禁止】，当前卡牌操作失效`);
       room.pending = null;
     }
     return;
   }
-  if (pending.type === 'help') {
+  if (pending.type === 'help' || pending.type === 'adv_help') {
     if (!Number.isInteger(cardIndex) || !actor.hand[cardIndex]) throw Error('请选择要交出的牌');
-    const [card] = actor.hand.splice(cardIndex, 1);
-    source.hand.push(card);
+    const given = removeCardAt(actor, cardIndex);
+    source.hand.push(given);
     log(room, `${actor.name} 交给 ${source.name} 一张牌`);
   } else if (pending.type === 'swap') {
     [actor.hand, source.hand] = [source.hand, actor.hand];
     log(room, `${actor.name} 与 ${source.name} 交换了全部手牌`);
+  } else if (pending.type === 'adv_swap') {
+    log(room, `${actor.name} 没有禁止【高级交换】，交换没有生效`);
   } else if (pending.type === 'attack') {
-    room.turn = room.players.indexOf(actor);
-    room.extraTurns = pending.chain?.length || 1;
-    room.attackTurnOwner = actor.token;
-    room.attackTurnInitialExtra = room.extraTurns;
-    room.phase = 'play';
-    log(room, `${actor.name} 将连续进行 ${room.extraTurns + 1} 个回合`);
+    resolveAttack(room, actor, pending.chain?.length > 1 ? 3 : 2);
   }
   room.pending = null;
 }
+function explodeBomb(room, p, bombCard, reason) {
+  log(room, `${p.name} 触发了${CARD_NAMES[cardType(bombCard)] || '炸弹'}！`);
+  if (hasCard(p, 'defuse')) {
+    consume(p, 'defuse');
+    room.discard.push('defuse');
+    room.phase = 'defuse';
+    p.pendingBomb = true;
+    p.pendingBombCard = bombCard;
+    p.cancelAttackTurns = room.attackTurnOwner === p.token;
+    log(room, `${p.name} 使用了【拆除】，正在放回炸弹`);
+    effect(room, 'bomb-defuse', 'BOOM → 拆除！', reason || `${p.name} 成功化解炸弹`, {
+      card: 'defuse', source: p.token, sourceName: p.name
+    });
+    return true;
+  }
+  effect(room, 'bomb', 'BOOM！炸弹爆炸！', `${p.name} 没有拆除牌`, {
+    card: cardType(bombCard), source: p.token, sourceName: p.name
+  });
+  p.alive = false;
+  room.discard.push(bombCard);
+  log(room, `${p.name} 被炸出局`);
+  advance(room);
+  return true;
+}
+function checkDelayedBomb(room, p) {
+  const idx = p.hand.findIndex(c => cardType(c) === 'delayBomb');
+  if (idx < 0) return false;
+  const bomb = p.hand[idx];
+  if (room.deck.length === 0 || bomb.ticks >= 1) {
+    p.hand.splice(idx, 1);
+    return explodeBomb(room, p, bomb, '延时炸弹在摸牌前引爆');
+  }
+  bomb.ticks = 1;
+  return false;
+}
 function draw(room, p) {
   requireTurn(room, p);
+  if (checkDelayedBomb(room, p)) return;
   const card = room.deck.shift();
   if (!card) throw Error('牌堆空了');
-  if (card !== 'bomb') {
+  const type = cardType(card);
+  if (type === 'delayBomb') {
     p.hand.push(card);
     log(room, `${p.name} 摸了一张牌`);
     advance(room);
     return;
   }
-  log(room, `${p.name} 摸到了炸弹！`);
-  if (p.hand.includes('defuse')) {
-    consume(p, 'defuse');
-    room.discard.push('defuse');
-    room.phase = 'defuse';
-    p.pendingBomb = true;
-    p.cancelAttackTurns = room.attackTurnOwner === p.token;
-    log(room, `${p.name} 使用了【拆除】，正在放回炸弹`);
-    effect(room, 'bomb-defuse', 'BOOM → 拆除！', `${p.name} 成功化解炸弹`, {
-      card: 'defuse', source: p.token, sourceName: p.name
-    });
-  } else {
-    effect(room, 'bomb', 'BOOM！摸到炸弹！', `${p.name} 没有拆除牌`, {
-      card: 'bomb', source: p.token, sourceName: p.name
-    });
-    p.alive = false;
-    room.discard.push('bomb');
-    log(room, `${p.name} 被炸出局`);
+  if (!BOMB_CARDS.has(type)) {
+    p.hand.push(card);
+    log(room, `${p.name} 摸了一张牌`);
     advance(room);
+    return;
   }
+  explodeBomb(room, p, card, `${p.name} 摸到了炸弹`);
 }
 function insertBomb(room, p, position) {
   if (current(room) !== p || room.phase !== 'defuse' || !p.pendingBomb) throw Error('当前无需放置炸弹');
@@ -317,8 +435,11 @@ function insertBomb(room, p, position) {
   const chosen = Number(position);
   if (!Number.isInteger(chosen) || chosen < 1 || chosen > maxPosition) throw Error(`放置位置必须在 1～${maxPosition} 之间`);
   const at = chosen - 1;
-  room.deck.splice(at, 0, 'bomb');
+  const bombCard = p.pendingBombCard || 'bomb';
+  if (cardType(bombCard) === 'delayBomb') bombCard.ticks = 0;
+  room.deck.splice(at, 0, bombCard);
   p.pendingBomb = false;
+  p.pendingBombCard = null;
   log(room, `${p.name} 已将炸弹秘密放回牌堆`);
   if (p.cancelAttackTurns) {
     room.extraTurns = 0;
@@ -341,14 +462,14 @@ function publicState(room, token) {
     role: room.effect.source === token ? 'source' : room.effect.target === token ? 'target' : 'observer'
   } : null;
   return {
-    code: room.code, status: room.status, host: room.host === token,
+    code: room.code, mode: room.mode || 'advanced', status: room.status, host: room.host === token,
     direction: room.direction, turnToken: room.status === 'playing' ? current(room)?.token : null,
     turnName: room.status === 'playing' ? current(room)?.name : null,
     deckCount: room.deck.length, phase: room.phase, winner: room.winner, log: room.log,
     effect: roomEffect, chat: room.chat || [],
-    pending: room.pending ? { type: room.pending.type, targetMe: room.pending.target === token, sourceName: player(room, room.pending.source)?.name, attackDepth: room.pending.chain?.length || 0 } : null,
+    pending: room.pending ? { type: room.pending.type, targetMe: room.pending.target === token, sourceName: player(room, room.pending.source)?.name, attackDepth: room.pending.chain?.length || 0, noNope: !!room.pending.noNope, stacked: !!room.pending.stacked } : null,
     players: room.players.map(p => ({ token: p.token, name: p.name, ready: p.ready, alive: p.alive, cards: p.hand.length, host: p.token === room.host })),
-    me: me ? { token, hand: me.hand, alive: me.alive, peek: me.peek || null, pendingBomb: !!me.pendingBomb } : null
+    me: me ? { token, hand: handTypes(me), alive: me.alive, peek: me.peek || null, pendingBomb: !!me.pendingBomb } : null
   };
 }
 function broadcast(room) {
@@ -382,8 +503,9 @@ async function api(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/create') {
     const data = await body(req); const token = id(); const code = roomCode();
     const name = String(data.name || '').trim().slice(0, 12);
+    const mode = data.mode === 'normal' ? 'normal' : 'advanced';
     if (!name) throw Error('请输入昵称');
-    const room = { code, host: token, players: [{ token, name, ready: true, alive: true, hand: [] }], status: 'lobby', deck: [], discard: [], log: [`${name} 创建了房间`], chat: [], effect: null, direction: -1, phase: 'play', pending: null };
+    const room = { code, mode, host: token, players: [{ token, name, ready: true, alive: true, hand: [] }], status: 'lobby', deck: [], discard: [], log: [`${name} 创建了房间`], chat: [], effect: null, direction: -1, phase: 'play', pending: null };
     rooms.set(code, room); sessions.set(token, code); json(res, 200, { token, code }); return;
   }
   if (req.method === 'POST' && url.pathname === '/api/join') {
@@ -449,10 +571,10 @@ const server = http.createServer(async (req, res) => {
       staticFile(req, res, url);
     }
   }
-  catch (e) { json(res, 400, { error: e.message || '操作失败' }); }
+  catch (e) { json(res, 400, { error: e.message || '鎿嶄綔澶辫触' }); }
 });
 if (require.main === module) {
   server.listen(PORT, '0.0.0.0', () => console.log(`Boom Cat running at http://0.0.0.0:${PORT}`));
 }
 
-module.exports = { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat, publicState };
+module.exports = { advance, leaveRoom, resetForRematch, playCard, stackAttack, resolvePending, insertBomb, sendChat, publicState, draw, buildDeck };
