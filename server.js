@@ -183,7 +183,7 @@ function specialBombsFor(count, mode) {
 }
 function makeBombCard(type) {
   if (type === 'invisibleBomb') return card('invisibleBomb', { mask: randomMask() });
-  if (type === 'delayBomb') return card('delayBomb', { ticks: 0 });
+  if (type === 'delayBomb') return card('delayBomb');
   return 'bomb';
 }
 function isBombLike(item) {
@@ -281,8 +281,8 @@ function playCard(room, p, type, targetToken, options = {}) {
   }
   consume(p, type);
   room.discard.push(type);
-  const visibleType = type === 'adv_swap' ? 'swap' : type;
-  log(room, `${p.name} 使用了【${CARD_NAMES[visibleType]}】${target ? `，目标是 ${target.name}` : ''}`);
+  const visibleLogType = type === 'adv_swap' ? 'swap' : type;
+  log(room, `${p.name} 使用了【${CARD_NAMES[visibleLogType]}】${target ? `，目标是 ${target.name}` : ''}`);
   cardEffect(room, type, p, target, type === 'cut' ? `牌堆底部 ${cutCount} 张移到顶部` : '');
 
   if (type === 'see') p.peek = room.deck.slice(0, 3).map(visibleType);
@@ -404,12 +404,8 @@ function checkDelayedBomb(room, p) {
   const idx = p.hand.findIndex(c => cardType(c) === 'delayBomb');
   if (idx < 0) return false;
   const bomb = p.hand[idx];
-  if (room.deck.length === 0 || bomb.ticks >= 1) {
-    p.hand.splice(idx, 1);
-    return explodeBomb(room, p, bomb, '延时炸弹在摸牌前引爆');
-  }
-  bomb.ticks = 1;
-  return false;
+  p.hand.splice(idx, 1);
+  return explodeBomb(room, p, bomb, '延时炸弹在摸牌前引爆');
 }
 function triggerEmptyDeckDelayedBomb(room) {
   if (room.status !== 'playing' || room.phase === 'defuse' || room.deck.length !== 0) return false;
@@ -449,7 +445,6 @@ function insertBomb(room, p, position) {
   if (!Number.isInteger(chosen) || chosen < 1 || chosen > maxPosition) throw Error(`放置位置必须在 1～${maxPosition} 之间`);
   const at = chosen - 1;
   const bombCard = p.pendingBombCard || 'bomb';
-  if (cardType(bombCard) === 'delayBomb') bombCard.ticks = 0;
   room.deck.splice(at, 0, bombCard);
   p.pendingBomb = false;
   p.pendingBombCard = null;

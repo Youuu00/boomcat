@@ -49,6 +49,12 @@ async function run() {
     }
   }
 
+  const seeRoom = makeRuleRoom();
+  seeRoom.players[0].hand = ['see'];
+  seeRoom.deck = ['skip', 'bomb', { type: 'invisibleBomb', mask: 'help' }];
+  playCard(seeRoom, seeRoom.players[0], 'see');
+  assert.deepEqual(seeRoom.players[0].peek, ['skip', 'bomb', 'help']);
+
   const lockedDefuseRoom = makeRuleRoom();
   lockedDefuseRoom.players[0].hand = ['skip'];
   lockedDefuseRoom.players[0].pendingBomb = true;
@@ -99,7 +105,7 @@ async function run() {
   const emptyDeckDelayRoom = makeRuleRoom();
   emptyDeckDelayRoom.players = emptyDeckDelayRoom.players.slice(0, 2);
   emptyDeckDelayRoom.players[0].hand = [];
-  emptyDeckDelayRoom.players[1].hand = [{ type: 'delayBomb', ticks: 0 }, 'defuse'];
+  emptyDeckDelayRoom.players[1].hand = [{ type: 'delayBomb' }, 'defuse'];
   emptyDeckDelayRoom.deck = ['skip'];
   emptyDeckDelayRoom.turn = 0;
   draw(emptyDeckDelayRoom, emptyDeckDelayRoom.players[0]);
@@ -112,17 +118,25 @@ async function run() {
   assert.equal(emptyDeckDelayRoom.deck[0].type, 'delayBomb');
 
   const delayTransferRoom = makeRuleRoom();
-  const delayCard = { type: 'delayBomb', ticks: 1 };
+  const delayCard = { type: 'delayBomb' };
   delayTransferRoom.players[0].hand = ['help', 'defuse'];
   delayTransferRoom.players[1].hand = [delayCard, 'defuse'];
   playCard(delayTransferRoom, delayTransferRoom.players[0], 'help', 'b');
   resolvePending(delayTransferRoom, delayTransferRoom.players[1], 'accept', 0);
-  assert.equal(delayTransferRoom.players[0].hand.some(c => c.type === 'delayBomb' && c.ticks === 1), true);
+  assert.equal(delayTransferRoom.players[0].hand.some(c => c.type === 'delayBomb'), true);
   delayTransferRoom.turn = 0;
   delayTransferRoom.deck = ['skip'];
   draw(delayTransferRoom, delayTransferRoom.players[0]);
   assert.equal(delayTransferRoom.phase, 'defuse');
   assert.equal(delayTransferRoom.players[0].pendingBomb, true);
+
+  const delaySkipRoom = makeRuleRoom();
+  delaySkipRoom.players[0].hand = [{ type: 'delayBomb' }, 'skip'];
+  delaySkipRoom.deck = ['cut'];
+  playCard(delaySkipRoom, delaySkipRoom.players[0], 'skip');
+  assert.equal(delaySkipRoom.phase, 'play');
+  assert.equal(!!delaySkipRoom.players[0].pendingBomb, false);
+  assert.equal(delaySkipRoom.players[0].hand.some(c => c.type === 'delayBomb'), true);
 
   const bombPositionRoom = makeRuleRoom();
   bombPositionRoom.players[0].pendingBomb = true;
