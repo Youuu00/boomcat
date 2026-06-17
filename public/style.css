@@ -22,3 +22,6 @@ html,body{width:100%;max-width:100%;overflow:hidden}body{overscroll-behavior:non
 
 /* Advanced cards: flowing rainbow border only, no breathing glow. */
 .card.advanced{overflow:hidden!important;border:3px solid transparent!important;background:linear-gradient(#fff7e9,#d8c7ad) padding-box,conic-gradient(from var(--spin,0deg),#ff4d5a,#ffc857,#48d597,#38a3ff,#8a82ff,#ff4d5a) border-box!important;box-shadow:0 9px 20px #0007!important;animation:rainbowBorder 2.8s linear infinite!important;isolation:auto!important}.card.advanced:before{display:none!important}.card.advanced:after{content:"";position:absolute;inset:0;border-radius:11px;border:1px solid #ffffff8a;opacity:.5;pointer-events:none}.card.advanced strong{background:linear-gradient(90deg,#ff4d5a,#8a82ff,#48d597);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* Event log: show four rows by default. */
+.log{max-height:112px!important;overflow:hidden!important}.log div{line-height:20px!important}.log-shell.expanded .log{max-height:220px!important;overflow:auto!important}

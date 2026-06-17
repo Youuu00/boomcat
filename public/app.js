@@ -125,7 +125,11 @@ function render(){
   renderEffect();
   const notice=$('#notice'); notice.style.display='none';
   if(state.me.peek){notice.style.display='block'; notice.textContent=`查看结果：${state.me.peek.map(x=>names[x]||x).join(' → ')}`;}
-  if(state.pending){notice.style.display='block'; notice.textContent=state.pending.targetMe?`${state.pending.sourceName} 对你使用了【${names[state.pending.type]}】，请选择处理方式`:`等待目标玩家处理【${names[state.pending.type]}】`;}
+  if(state.pending){
+    const shownType=visiblePendingType(state.pending.type);
+    notice.style.display='block';
+    notice.textContent=state.pending.targetMe?`${state.pending.sourceName} 对你使用了【${names[shownType]}】，请选择处理方式`:`等待目标玩家处理【${names[shownType]}】`;
+  }
   renderPendingModal();
   renderActions();
   renderHand();
@@ -154,6 +158,9 @@ function getNextToken(){
   for(let i=0;i<list.length;i++){ index=(index+state.direction+list.length)%list.length; if(list[index].alive)return list[index].token; }
   return null;
 }
+function visiblePendingType(type){
+  return type==='adv_swap'?'swap':type;
+}
 function renderPendingModal(){
   if(!state.pending?.targetMe){shownPending='';return;}
   const key=`${state.pending.type}:${state.pending.sourceName}:${state.pending.attackDepth||0}`;
@@ -167,7 +174,7 @@ function renderPendingModal(){
     return;
   }
   if(!state.pending.noNope&&state.me.hand.includes('nope')){
-    actions.push({label:state.pending.type==='adv_swap'?'使用【禁止】让高级交换生效':'使用【禁止】使其失效',onClick:()=>{forceCloseModal();post('/api/resolve',{action:'nope'});}});
+    actions.push({label:'使用【禁止】使其失效',onClick:()=>{forceCloseModal();post('/api/resolve',{action:'nope'});}});
   }
   if(state.pending.type==='help'||state.pending.type==='adv_help'){
     state.me.hand.forEach((card,index)=>actions.push({label:`交出【${names[card]||card}】`,className:'target-button',onClick:()=>{forceCloseModal();post('/api/resolve',{action:'accept',cardIndex:index});}}));
@@ -175,12 +182,9 @@ function renderPendingModal(){
     return;
   }
   if(state.pending.type==='attack'&&!state.pending.stacked&&state.me.hand.includes('attack'))actions.push({label:'⚔️ 叠加攻击（只能叠加一次）',onClick:()=>chooseAttackTarget(true)});
-  actions.push({label:`接受【${names[state.pending.type]}】`,className:'secondary',onClick:()=>{forceCloseModal();post('/api/resolve',{action:'accept'});}});
-  if(state.pending.type==='adv_swap'){
-    openModal('你被使用了【高级交换】！',`<p><b>${esc(state.pending.sourceName)}</b> 对你使用了【高级交换】。</p><p><b>博弈提示：</b>你如果使用【禁止】，交换反而会生效；你如果不禁止，交换不会生效。</p>`,actions,{danger:true,locked:true});
-  }else{
-    openModal(`你被使用了【${names[state.pending.type]}】！`,`<p><b>${esc(state.pending.sourceName)}</b> 对你使用了这张牌，请立即处理。</p>`,actions,{danger:true,locked:true});
-  }
+  const shownType=visiblePendingType(state.pending.type);
+  actions.push({label:`接受【${names[shownType]}】`,className:'secondary',onClick:()=>{forceCloseModal();post('/api/resolve',{action:'accept'});}});
+  openModal(`你被使用了【${names[shownType]}】！`,`<p><b>${esc(state.pending.sourceName)}</b> 对你使用了这张牌，请立即处理。</p>`,actions,{danger:true,locked:true});
 }
 function renderActions(){
   const a=$('#actions'); a.innerHTML='';
@@ -199,7 +203,7 @@ function renderActions(){
   $('#turn').textContent=state.turnToken===state.me.token?'👉 轮到你了！':`⏳ 等待 ${state.turnName} 行动`;
   if(state.pending?.targetMe){
     if(state.pending.type==='adv_nope'){ if(state.me.hand.includes('adv_nope'))addButton(a,'🌈 使用高级禁止',()=>post('/api/resolve',{action:'adv_nope'})); addButton(a,'不使用',()=>post('/api/resolve',{action:'accept'})); return; }
-    if(!state.pending.noNope&&state.me.hand.includes('nope'))addButton(a,state.pending.type==='adv_swap'?'使用禁止让高级交换生效':'使用禁止',()=>post('/api/resolve',{action:'nope'}));
+    if(!state.pending.noNope&&state.me.hand.includes('nope'))addButton(a,'使用禁止',()=>post('/api/resolve',{action:'nope'}));
     if(state.pending.type==='help'||state.pending.type==='adv_help'){
       const select=document.createElement('select'); state.me.hand.forEach((c,i)=>select.add(new Option(names[c]||c,i))); a.append(select);
       addButton(a,'交出此牌',()=>post('/api/resolve',{action:'accept',cardIndex:Number(select.value)}));
