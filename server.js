@@ -62,8 +62,9 @@ function effect(room, type, title, subtitle = '', details = {}) {
   room.effect = { id: id(6), type, title, subtitle, issuedAt: Date.now(), ...details };
 }
 function cardEffect(room, card, source, target = null, subtitle = '') {
-  effect(room, 'card', CARD_NAMES[card], subtitle, {
-    card,
+  const visibleCard = card === 'adv_swap' ? 'swap' : card;
+  effect(room, 'card', CARD_NAMES[visibleCard], subtitle, {
+    card: visibleCard,
     source: source.token,
     sourceName: source.name,
     target: target?.token || null,
@@ -280,7 +281,8 @@ function playCard(room, p, type, targetToken, options = {}) {
   }
   consume(p, type);
   room.discard.push(type);
-  log(room, `${p.name} 使用了【${CARD_NAMES[type]}】${target ? `，目标是 ${target.name}` : ''}`);
+  const visibleType = type === 'adv_swap' ? 'swap' : type;
+  log(room, `${p.name} 使用了【${CARD_NAMES[visibleType]}】${target ? `，目标是 ${target.name}` : ''}`);
   cardEffect(room, type, p, target, type === 'cut' ? `牌堆底部 ${cutCount} 张移到顶部` : '');
 
   if (type === 'see') p.peek = room.deck.slice(0, 3).map(visibleType);
@@ -409,6 +411,15 @@ function checkDelayedBomb(room, p) {
   bomb.ticks = 1;
   return false;
 }
+function triggerEmptyDeckDelayedBomb(room) {
+  if (room.status !== 'playing' || room.phase === 'defuse' || room.deck.length !== 0) return false;
+  const holder = living(room).find(p => p.hand.some(c => cardType(c) === 'delayBomb'));
+  if (!holder) return false;
+  const idx = holder.hand.findIndex(c => cardType(c) === 'delayBomb');
+  const bomb = holder.hand.splice(idx, 1)[0];
+  room.turn = room.players.indexOf(holder);
+  return explodeBomb(room, holder, bomb, '牌堆已空，延时炸弹立即引爆');
+}
 function draw(room, p) {
   requireTurn(room, p);
   if (checkDelayedBomb(room, p)) return;
@@ -419,12 +430,14 @@ function draw(room, p) {
     p.hand.push(card);
     log(room, `${p.name} 摸了一张牌`);
     advance(room);
+    triggerEmptyDeckDelayedBomb(room);
     return;
   }
   if (!BOMB_CARDS.has(type)) {
     p.hand.push(card);
     log(room, `${p.name} 摸了一张牌`);
     advance(room);
+    triggerEmptyDeckDelayedBomb(room);
     return;
   }
   explodeBomb(room, p, card, `${p.name} 摸到了炸弹`);

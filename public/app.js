@@ -143,7 +143,10 @@ function renderPlayers(){
     const angle=-90+seat*360/Math.max(total,1);
     const rx=total<=2?34:43, ry=total<=2?30:38;
     const x=50+rx*Math.cos(angle*Math.PI/180), y=50+ry*Math.sin(angle*Math.PI/180);
+    const fx=state.effect;
+    const bubbleCard=fx&&fx.type==='card'&&fx.source===p.token&&Date.now()-fx.issuedAt<2600?visiblePendingType(fx.card):null;
     return `<article class="seat ${p.token===state.me.token?'me ':''}${p.token===state.turnToken?'current ':''}${p.token===nextToken?'next ':''}${p.alive?'':'dead'}" style="left:${x}%;top:${y}%">
+      ${bubbleCard?`<div class="seat-bubble">${esc(names[bubbleCard]||bubbleCard)}</div>`:''}
       <div class="avatar">${p.alive?'😼':'💥'}</div>
       <b>${esc(p.name)} ${p.host?'👑':''}</b>
       <small>${p.alive?`${p.cards}张牌`:'已出局'} · ${p.ready?'✅':'⏳'}</small>
@@ -278,6 +281,11 @@ function renderChat(){
 function renderEffect(){
   const fx=state.effect;
   if(!fx||fx.id===lastEffectId||Date.now()-fx.issuedAt>8000)return;
+  if(fx.type==='card'){
+    $('#effectOverlay').classList.add('hidden');
+    lastEffectId=fx.id;
+    return;
+  }
   lastEffectId=fx.id;
   const icons={bomb:'💥',invisibleBomb:'🫥',delayBomb:'⏱️',defuse:'🛠️',cut:'✂️',help:'🤝',see:'🔮',skip:'⏭️',reverse:'🔄',attack:'⚔️',swap:'🔁',nope:'🚫',adv_cut:'🌈',adv_see:'🌈',adv_help:'🌈',adv_swap:'🌈',adv_nope:'🌈'};
   const overlay=$('#effectOverlay');

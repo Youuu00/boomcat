@@ -90,9 +90,26 @@ async function run() {
   advancedSwapRoom.players[0].hand = ['adv_swap', '一'];
   advancedSwapRoom.players[1].hand = ['nope', '二'];
   playCard(advancedSwapRoom, advancedSwapRoom.players[0], 'adv_swap', 'b');
+  assert.equal(advancedSwapRoom.effect.card, 'swap');
+  assert.equal(advancedSwapRoom.log[0].includes('高级交换'), false);
   resolvePending(advancedSwapRoom, advancedSwapRoom.players[1], 'nope');
   assert.deepEqual(advancedSwapRoom.players[0].hand.map(String), ['二']);
   assert.deepEqual(advancedSwapRoom.players[1].hand.map(String), ['一']);
+
+  const emptyDeckDelayRoom = makeRuleRoom();
+  emptyDeckDelayRoom.players = emptyDeckDelayRoom.players.slice(0, 2);
+  emptyDeckDelayRoom.players[0].hand = [];
+  emptyDeckDelayRoom.players[1].hand = [{ type: 'delayBomb', ticks: 0 }, 'defuse'];
+  emptyDeckDelayRoom.deck = ['skip'];
+  emptyDeckDelayRoom.turn = 0;
+  draw(emptyDeckDelayRoom, emptyDeckDelayRoom.players[0]);
+  assert.equal(emptyDeckDelayRoom.phase, 'defuse');
+  assert.equal(emptyDeckDelayRoom.turn, 1);
+  assert.equal(emptyDeckDelayRoom.players[1].pendingBomb, true);
+  insertBomb(emptyDeckDelayRoom, emptyDeckDelayRoom.players[1], 1);
+  assert.equal(emptyDeckDelayRoom.turn, 0);
+  assert.equal(emptyDeckDelayRoom.phase, 'play');
+  assert.equal(emptyDeckDelayRoom.deck[0].type, 'delayBomb');
 
   const delayTransferRoom = makeRuleRoom();
   const delayCard = { type: 'delayBomb', ticks: 1 };

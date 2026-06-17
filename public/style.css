@@ -25,3 +25,6 @@ html,body{width:100%;max-width:100%;overflow:hidden}body{overscroll-behavior:non
 
 /* Event log: show four rows by default. */
 .log{max-height:112px!important;overflow:hidden!important}.log div{line-height:20px!important}.log-shell.expanded .log{max-height:220px!important;overflow:auto!important}
+
+/* Seat card broadcast bubbles. */
+.seat-bubble{position:absolute;left:50%;top:-36px;transform:translateX(-50%);z-index:4;max-width:150px;padding:7px 12px;border-radius:999px;background:linear-gradient(135deg,#fff7db,#ffd166);color:#24160d;font-weight:1000;font-size:14px;white-space:nowrap;box-shadow:0 10px 24px #0008,0 0 18px #ffc85766;animation:seatBubblePop 2.4s ease both}.seat-bubble:after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);border:8px solid transparent;border-top-color:#ffd166;border-bottom:0}@keyframes seatBubblePop{0%{opacity:0;transform:translate(-50%,10px) scale(.65)}14%,72%{opacity:1;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-10px) scale(.94)}}@media(max-width:560px){.seat-bubble{top:-31px;max-width:118px;padding:6px 9px;font-size:12px}}
